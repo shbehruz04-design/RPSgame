@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <title>RPS Battle</title>
+    <script>
+      (function () {
+        // Prefer the current origin when the app is served by its own backend
+        // (local development, Render, Railway, etc.). This keeps API calls
+        // same-origin and avoids false "Offline" states. An explicit
+        // ?backend=... or localStorage override still works for cross-origin
+        // setups such as a separate frontend host talking to a backend API.
+        const params = new URLSearchParams(window.location.search);
+        const fromParam = params.get("backend") || "";
+        const fromStorage = window.localStorage
+          ? window.localStorage.getItem("rps-backend-url") || ""
+          : "";
+        const fallbackOrigin = window.location.origin || "";
+
+        window.__RPS_BACKEND_URL__ = fromParam || fromStorage || fallbackOrigin;
+      })();
+    </script>
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="fx-canvas"></canvas>
+
+    <!-- ════════════════ SCREEN: USERNAME SETUP ════════════════ -->
+    <div id="screen-username" class="screen">
+      <div class="username-bg">
+        <div class="orb orb--a"></div>
+        <div class="orb orb--b"></div>
+      </div>
+      <div class="username-content">
+        <div class="username-logo">
+          <div class="logo-symbols">
+            <span class="ls ls--rock">🪨</span>
+            <span class="ls ls--paper">📄</span>
+            <span class="ls ls--scissors">✂️</span>
+          </div>
+          <h1 class="logo-title">RPS<span class="logo-dot">·</span>BATTLE</h1>
+        </div>
+
+        <div class="username-card">
+          <div class="username-avatar-preview">
+            <div class="avatar-ring" id="setup-avatar-ring">
+              <span id="setup-avatar-init" class="avatar-init">?</span>
+            </div>
+          </div>
+          <h2 class="username-heading">Choose your name</h2>
+          <p class="username-sub">This is how other players will see you</p>
+          <input
+            class="username-input"
+            id="username-input"
+            type="text"
+            maxlength="20"
+            placeholder="Enter your name…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button
+            class="primary-btn username-confirm-btn"
+            id="btn-confirm-username"
+          >
+            Let's Play →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════ SCREEN: HOME ════════════════ -->
+    <div id="screen-home" class="screen">
+      <div class="home-bg">
+        <div class="orb orb--a"></div>
+        <div class="orb orb--b"></div>
+        <div class="orb orb--c"></div>
+      </div>
+      <div class="home-content">
+        <div class="logo-wrap">
+          <div class="logo-symbols">
+            <span class="ls ls--rock">🪨</span>
+            <span class="ls ls--paper">📄</span>
+            <span class="ls ls--scissors">✂️</span>
+          </div>
+          <h1 class="logo-title">RPS<span class="logo-dot">·</span>BATTLE</h1>
+          <p class="logo-sub">Choose your weapon. Outplay your rival.</p>
+        </div>
+
+        <div class="home-avatar-row">
+          <div class="avatar-ring" id="home-avatar-ring">
+            <img id="home-avatar-img" src="" alt="" hidden />
+            <span id="home-avatar-init" class="avatar-init">?</span>
+          </div>
+          <div class="home-greet">
+            <span class="home-greet-hey">Welcome back,</span>
+            <span class="home-greet-name" id="home-name">Player</span>
+          </div>
+        </div>
+
+        <div class="home-stats">
+          <div class="stat-pill">
+            <span class="stat-val" id="stat-wins">0</span>
+            <span class="stat-lbl">Wins</span>
+          </div>
+          <div class="stat-sep"></div>
+          <div class="stat-pill">
+            <span class="stat-val" id="stat-played">0</span>
+            <span class="stat-lbl">Played</span>
+          </div>
+          <div class="stat-sep"></div>
+          <div class="stat-pill">
+            <span class="stat-val" id="stat-streak">0</span>
+            <span class="stat-lbl">Best streak</span>
+          </div>
+        </div>
+
+        <!-- Backend offline notice -->
+        <div class="offline-notice" id="offline-notice" hidden>
+          <span class="offline-notice__icon">⚠️</span>
+          <span class="offline-notice__text"
+            >Multiplayer needs the server.<br />Run <code>npm start</code> on
+            port 3000.</span
+          >
+        </div>
+
+        <div class="mode-cards">
+          <button class="mode-card mode-card--bot" id="btn-vs-bot">
+            <div class="mode-card__icon">🤖</div>
+            <div class="mode-card__body">
+              <span class="mode-card__title">vs CPU</span>
+              <span class="mode-card__desc"
+                >Play solo, anytime — works offline</span
+              >
+            </div>
+            <div class="mode-card__arrow">→</div>
+          </button>
+
+          <button class="mode-card mode-card--online" id="btn-quick-match">
+            <div class="mode-card__icon">⚡</div>
+            <div class="mode-card__body">
+              <span class="mode-card__title">Quick match</span>
+              <span class="mode-card__desc">Battle a random player</span>
+            </div>
+            <div class="mode-card__arrow">→</div>
+            <div class="mode-card__badge" id="badge-quick">Online</div>
+          </button>
+
+          <button class="mode-card mode-card--private" id="btn-private">
+            <div class="mode-card__icon">🔗</div>
+            <div class="mode-card__body">
+              <span class="mode-card__title">Private room</span>
+              <span class="mode-card__desc">Invite a friend with a code</span>
+            </div>
+            <div class="mode-card__arrow">→</div>
+            <div class="mode-card__badge" id="badge-private">Online</div>
+          </button>
+        </div>
+
+        <div class="home-footer">
+          <button class="ghost-btn" id="btn-sound-home">🔊 Sound on</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════ SCREEN: WAITING ════════════════ -->
+    <div id="screen-waiting" class="screen">
+      <div class="waiting-content">
+        <div class="waiting-spinner">
+          <div class="spin-ring spin-ring--outer"></div>
+          <div class="spin-ring spin-ring--inner"></div>
+          <span class="spin-emoji">⚡</span>
+        </div>
+        <h2 class="waiting-title" id="waiting-title">Finding opponent…</h2>
+        <p class="waiting-sub" id="waiting-sub">
+          Hang tight, this won't take long
+        </p>
+
+        <!-- Shown to private room HOST after creating -->
+        <div class="room-code-box" id="room-code-box" hidden>
+          <span class="room-code-label">Room code</span>
+          <span class="room-code-val" id="room-code-val">——</span>
+          <button class="copy-btn" id="btn-copy-code">Copy</button>
+        </div>
+
+        <!-- Shown on private lobby: join by code -->
+        <div class="join-box" id="join-box" hidden>
+          <input
+            class="code-input"
+            id="code-input"
+            type="text"
+            maxlength="6"
+            placeholder="Enter room code"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="join-btn" id="btn-join-room">Join →</button>
+        </div>
+
+        <!-- Shown on private lobby: create room -->
+        <button class="primary-btn waiting-action" id="btn-create-room" hidden>
+          + Create room
+        </button>
+
+        <button class="ghost-btn" id="btn-cancel-wait">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ SCREEN: GAME ════════════════ -->
+    <div id="screen-game" class="screen">
+      <!-- Top bar -->
+      <div class="game-topbar">
+        <button class="back-btn" id="btn-back-game" aria-label="Leave game">
+          ✕
+        </button>
+        <div class="game-mode-badge" id="game-mode-badge">vs CPU</div>
+        <button
+          class="icon-btn-sm"
+          id="btn-sound-game"
+          aria-label="Toggle sound"
+        >
+          🔊
+        </button>
+      </div>
+
+      <!-- Players row -->
+      <div class="players-row">
+        <div class="player-slot player-slot--you">
+          <div class="pslot-avatar" id="game-avatar-you">
+            <img id="game-img-you" src="" alt="" hidden />
+            <span id="game-init-you" class="avatar-init">?</span>
+          </div>
+          <span class="pslot-name" id="game-name-you">You</span>
+          <span class="pslot-score" id="game-score-you">0</span>
+        </div>
+
+        <div class="vs-badge">VS</div>
+
+        <div class="player-slot player-slot--opp">
+          <span class="pslot-score pslot-score--opp" id="game-score-opp"
+            >0</span
+          >
+          <span class="pslot-name" id="game-name-opp">CPU</span>
+          <div class="pslot-avatar pslot-avatar--opp" id="game-avatar-opp">
+            <span class="avatar-init" id="game-init-opp">🤖</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arena -->
+      <div class="arena-wrap">
+        <div class="arena-card arena-card--you" id="arena-you">
+          <span class="arena-emoji" id="arena-emoji-you">❓</span>
+        </div>
+        <div class="arena-divider">
+          <div class="arena-divider__line"></div>
+          <span class="arena-divider__label" id="arena-label">Pick!</span>
+          <div class="arena-divider__line"></div>
+        </div>
+        <div class="arena-card arena-card--opp" id="arena-opp">
+          <span class="arena-emoji" id="arena-emoji-opp">❓</span>
+        </div>
+      </div>
+
+      <!-- Result banner -->
+      <div class="result-strip" id="result-strip" hidden>
+        <span class="result-strip__text" id="result-strip-text">—</span>
+        <span class="result-strip__msg" id="result-strip-msg"></span>
+      </div>
+
+      <!-- Choice buttons -->
+      <div class="choices-row" id="choices-row">
+        <button class="weapon-btn" data-choice="rock" aria-label="Rock">
+          <span class="weapon-btn__emoji">🪨</span>
+          <span class="weapon-btn__lbl">Rock</span>
+        </button>
+        <button class="weapon-btn" data-choice="paper" aria-label="Paper">
+          <span class="weapon-btn__emoji">📄</span>
+          <span class="weapon-btn__lbl">Paper</span>
+        </button>
+        <button class="weapon-btn" data-choice="scissors" aria-label="Scissors">
+          <span class="weapon-btn__emoji">✂️</span>
+          <span class="weapon-btn__lbl">Scissors</span>
+        </button>
+      </div>
+
+      <!-- Waiting for opponent (multiplayer only) -->
+      <div class="opp-status" id="opp-status" hidden>
+        <span class="opp-status__dot"></span>
+        <span id="opp-status-text">Waiting for opponent…</span>
+      </div>
+
+      <!-- Post-round actions -->
+      <div class="play-again-row" id="play-again-row" hidden>
+        <button class="primary-btn" id="btn-play-again">Next round</button>
+        <button class="ghost-btn" id="btn-leave-game">Leave</button>
+      </div>
+    </div>
+    <!-- /#screen-game -->
+
+    <!-- Toast notification -->
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

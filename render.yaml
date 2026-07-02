@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: rps-game
+    env: node
+    plan: free
+    buildCommand: ""
+    startCommand: "node server.js"
+    autoDeploy: true
+    envVars:
+      - key: MONGODB_URI
+        value: ""
