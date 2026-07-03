@@ -42,6 +42,24 @@ const activeRoomByPlayer = new Map();
 const matchmakingQueue = [];
 const queuedPlayers = new Set();
 
+// If a player hasn't hit ANY room endpoint (state/play/ready) for this long,
+// we consider them disconnected (tab closed, app backgrounded, network
+// dropped, etc). The client polls roughly every 1.2s, so ~4-5 missed polls.
+const DISCONNECT_TIMEOUT_MS = 12000;
+
+function touchLastSeen(room, playerId) {
+  if (!room || !playerId) return;
+  if (!room.lastSeen) room.lastSeen = {};
+  room.lastSeen[playerId] = Date.now();
+}
+
+function isPlayerDisconnected(room, playerId) {
+  if (!room || !playerId) return false;
+  const last = room.lastSeen?.[playerId];
+  if (!last) return false; // never seen yet — don't flag, avoid false positives
+  return Date.now() - last > DISCONNECT_TIMEOUT_MS;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -268,6 +286,7 @@ function makeRoom(type, hostId, hostName) {
     players: {},
     scores: {},
     ready: {},
+    lastSeen: {},
     round: {
       index: type === "private" ? 0 : 1,
       choices: {},
@@ -281,12 +300,14 @@ function makeRoom(type, hostId, hostName) {
 
   room.players[hostId] = { id: hostId, name: hostName, role: "host" };
   room.scores[hostId] = createScore();
+  touchLastSeen(room, hostId);
   return room;
 }
 
 function addPlayerToRoom(room, playerId, name, role) {
   room.players[playerId] = { id: playerId, name, role };
   room.scores[playerId] = room.scores[playerId] || createScore();
+  touchLastSeen(room, playerId);
   room.updatedAt = nowIso();
 }
 
@@ -403,6 +424,7 @@ function buildRoomView(room, viewerId, store) {
                 : null,
             result: opponentResult?.outcome || null,
             ready: !!room.ready[opponentId],
+            disconnected: isPlayerDisconnected(room, opponentId),
           }
         : null,
       round: {
@@ -833,6 +855,7 @@ async function handleApi(req, res, urlObject) {
       sendJson(res, 403, { ok: false, error: "Not a member of this room" });
       return;
     }
+    touchLastSeen(room, playerId);
     sendJson(res, 200, buildRoomView(room, playerId, store));
     return;
   }
@@ -864,6 +887,8 @@ async function handleApi(req, res, urlObject) {
       sendJson(res, 403, { ok: false, error: "You are not part of this room" });
       return;
     }
+
+    touchLastSeen(room, playerId);
 
     // Idempotent: if choice already recorded, return current state
     if (room.round.choices[playerId]) {
@@ -914,6 +939,7 @@ async function handleApi(req, res, urlObject) {
       return;
     }
 
+    touchLastSeen(room, playerId);
     room.ready[playerId] = true;
     if (
       room.hostId &&
