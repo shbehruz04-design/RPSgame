@@ -787,23 +787,17 @@
           // Opponent's client has gone quiet (closed tab, backgrounded app,
           // lost connection...) — don't leave the player stuck forever.
           dom.game.btnPlayAgain.disabled = true;
-          dom.game.btnPlayAgain.classList.remove(
-            "ready-waiting",
-            "result-pending",
-          );
+          dom.game.btnPlayAgain.classList.remove("ready-waiting", "result-pending");
           dom.game.btnPlayAgain.classList.add("opponent-gone");
           dom.game.btnPlayAgain.textContent = "Raqib javob bermayapti 📴";
           if (state.lastDisconnectNotice !== roomKey) {
             state.lastDisconnectNotice = roomKey;
-            showToast('Raqib bilan aloqa uzildi. "Leave" tugmasini bosing.');
+            showToast("Raqib bilan aloqa uzildi. \"Leave\" tugmasini bosing.");
           }
         } else {
           dom.game.btnPlayAgain.disabled = true;
           dom.game.btnPlayAgain.classList.add("ready-waiting");
-          dom.game.btnPlayAgain.classList.remove(
-            "result-pending",
-            "opponent-gone",
-          );
+          dom.game.btnPlayAgain.classList.remove("result-pending", "opponent-gone");
           dom.game.btnPlayAgain.textContent = "Waiting for opponent… ⏳";
         }
       } else {
@@ -876,7 +870,7 @@
     return configured.replace(/\/$/, "");
   }
 
-  async function apiRequest(path, options = {}, timeoutMs = 10000) {
+  async function apiRequest(path, options = {}, timeoutMs = 25000) {
     const baseUrl = getBackendBaseUrl();
     const url = `${baseUrl}${path}`;
     const controller = new AbortController();
