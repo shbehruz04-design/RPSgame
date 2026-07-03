@@ -783,10 +783,29 @@
       } else if (youReady && !oppReady) {
         // Already voted (or optimistically marked ready) — waiting for opponent
         clearTimeout(state._resultPendingTimer);
-        dom.game.btnPlayAgain.disabled = true;
-        dom.game.btnPlayAgain.classList.add("ready-waiting");
-        dom.game.btnPlayAgain.classList.remove("result-pending");
-        dom.game.btnPlayAgain.textContent = "Waiting for opponent… ⏳";
+        if (room.opponent?.disconnected) {
+          // Opponent's client has gone quiet (closed tab, backgrounded app,
+          // lost connection...) — don't leave the player stuck forever.
+          dom.game.btnPlayAgain.disabled = true;
+          dom.game.btnPlayAgain.classList.remove(
+            "ready-waiting",
+            "result-pending",
+          );
+          dom.game.btnPlayAgain.classList.add("opponent-gone");
+          dom.game.btnPlayAgain.textContent = "Raqib javob bermayapti 📴";
+          if (state.lastDisconnectNotice !== roomKey) {
+            state.lastDisconnectNotice = roomKey;
+            showToast('Raqib bilan aloqa uzildi. "Leave" tugmasini bosing.');
+          }
+        } else {
+          dom.game.btnPlayAgain.disabled = true;
+          dom.game.btnPlayAgain.classList.add("ready-waiting");
+          dom.game.btnPlayAgain.classList.remove(
+            "result-pending",
+            "opponent-gone",
+          );
+          dom.game.btnPlayAgain.textContent = "Waiting for opponent… ⏳";
+        }
       } else {
         // Both ready — new round starting
         clearTimeout(state._resultPendingTimer);
@@ -830,7 +849,9 @@
           ? "Waiting for opponent"
           : "Finding opponent"
         : room.you?.choice && !room.opponent?.choice
-          ? "Waiting for opponent..."
+          ? room.opponent?.disconnected
+            ? "Raqib javob bermayapti 📴"
+            : "Waiting for opponent..."
           : "Pick!";
     dom.game.resultStrip.hidden = true;
     dom.game.playAgainRow.hidden = true;
