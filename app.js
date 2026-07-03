@@ -763,39 +763,24 @@
       const oppReady = !!room.opponent?.ready;
 
       if (!youReady) {
-        // Not yet voted — lock briefly, then enable
-        dom.game.btnPlayAgain.disabled = true;
+        // Not yet voted — show it as pending briefly, but stay clickable
         dom.game.btnPlayAgain.classList.add("result-pending");
-        dom.game.btnPlayAgain.classList.remove("ready-waiting");
+        dom.game.btnPlayAgain.classList.remove("ready-waiting", "opponent-gone");
         dom.game.btnPlayAgain.textContent = "Next round";
-        clearTimeout(state._resultPendingTimer);
-        state._resultPendingTimer = setTimeout(() => {
-          // Only apply if still in result-pending state (not been overwritten)
-          // and the user still hasn't readied up in the meantime.
-          if (
-            dom.game.btnPlayAgain.classList.contains("result-pending") &&
-            !state._optimisticReady
-          ) {
-            dom.game.btnPlayAgain.disabled = false;
-            dom.game.btnPlayAgain.classList.remove("result-pending");
-          }
-        }, 1200);
       } else if (youReady && !oppReady) {
         // Already voted (or optimistically marked ready) — waiting for opponent
         clearTimeout(state._resultPendingTimer);
         if (room.opponent?.disconnected) {
           // Opponent's client has gone quiet (closed tab, backgrounded app,
           // lost connection...) — don't leave the player stuck forever.
-          dom.game.btnPlayAgain.disabled = true;
           dom.game.btnPlayAgain.classList.remove("ready-waiting", "result-pending");
           dom.game.btnPlayAgain.classList.add("opponent-gone");
-          dom.game.btnPlayAgain.textContent = "Raqib javob bermayapti 📴";
+          dom.game.btnPlayAgain.textContent = "Raqib javob bermayapti 📴 (qayta urinish uchun bosing)";
           if (state.lastDisconnectNotice !== roomKey) {
             state.lastDisconnectNotice = roomKey;
             showToast("Raqib bilan aloqa uzildi. \"Leave\" tugmasini bosing.");
           }
         } else {
-          dom.game.btnPlayAgain.disabled = true;
           dom.game.btnPlayAgain.classList.add("ready-waiting");
           dom.game.btnPlayAgain.classList.remove("result-pending", "opponent-gone");
           dom.game.btnPlayAgain.textContent = "Waiting for opponent… ⏳";
@@ -803,10 +788,10 @@
       } else {
         // Both ready — new round starting
         clearTimeout(state._resultPendingTimer);
-        dom.game.btnPlayAgain.disabled = false;
         dom.game.btnPlayAgain.classList.remove(
           "ready-waiting",
           "result-pending",
+          "opponent-gone",
         );
         dom.game.btnPlayAgain.textContent = "Next round";
       }
@@ -889,14 +874,38 @@
       const payload = ct.includes("application/json")
         ? await res.json()
         : await res.text();
-      if (!res.ok)
-        throw new Error(payload?.error || `Request failed: ${res.status}`);
+      if (!res.ok) {
+        const err = new Error(payload?.error || `Request failed: ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
       return payload;
     } catch (err) {
       clearTimeout(timer);
-      if (err.name === "AbortError") throw new Error("Request timed out");
+      if (err.name === "AbortError") {
+        const e = new Error("Request timed out");
+        e.transient = true;
+        throw e;
+      }
+      if (err.status === undefined) err.transient = true; // network-level failure
       throw err;
     }
+  }
+
+  async function apiRequestRetry(path, options, attempts = 3, delayMs = 700) {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await apiRequest(path, options);
+      } catch (err) {
+        lastErr = err;
+        // Only retry transient (network/timeout) failures — a real server
+        // error (room full, invalid move, etc) won't fix itself.
+        if (!err.transient || i === attempts - 1) throw err;
+        await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+    throw lastErr;
   }
 
   async function loadProfile() {
@@ -1243,6 +1252,7 @@
       const data = await apiRequest(
         `/api/rooms/state?roomId=${encodeURIComponent(state.session.roomId)}&playerId=${encodeURIComponent(state.clientId)}`,
       );
+      state._roomPollFailures = 0; // connection is healthy again
       if (data.profile) applyProfileFromServer(data.profile);
       // Capture prevPhase BEFORE overwriting state.room
       const prevPhase = state.room?.phase;
@@ -1263,14 +1273,28 @@
     } catch (err) {
       // Ignore network errors from superseded/aborted polls
       if (mySeq < state._roomFetchSeqApplied) return;
-      // Stop polling first, then redirect — avoids repeated toasts
-      stopPolling();
       const msg = String(err.message || "");
-      // Only show toast for unexpected errors (not normal room-closed)
-      if (!msg.includes("Room not found") && !msg.includes("404")) {
-        showToast(msg || "Room unavailable");
+      const isDefinitelyGone = msg.includes("Room not found") || msg.includes("404");
+      if (isDefinitelyGone) {
+        // The room genuinely no longer exists server-side — no point retrying.
+        stopPolling();
+        showToast("Xona topilmadi — server qayta ishga tushgan bo'lishi mumkin.");
+        routeToHome();
+        return;
       }
-      routeToHome();
+      // Transient failure (timeout, dropped connection, server briefly
+      // waking up, etc). Don't nuke the session on one bad poll — retry
+      // silently for a while before giving up.
+      state._roomPollFailures = (state._roomPollFailures || 0) + 1;
+      if (state._roomPollFailures === 2) {
+        showToast("Ulanish sekinlashdi, qayta urinilmoqda…");
+      }
+      if (state._roomPollFailures >= 8) {
+        // ~10s+ of consistently failing polls — genuinely unreachable now.
+        stopPolling();
+        showToast(msg || "Server bilan aloqa uzildi.");
+        routeToHome();
+      }
     }
   }
 
@@ -1453,7 +1477,7 @@
     const mySeq = ++state._roomFetchSeq;
 
     try {
-      const result = await apiRequest("/api/rooms/play", {
+      const result = await apiRequestRetry("/api/rooms/play", {
         method: "POST",
         body: JSON.stringify({
           roomId: state.session.roomId,
@@ -1506,12 +1530,11 @@
     dom.game.btnPlayAgain.textContent = "Waiting for opponent… ⏳";
     dom.game.btnPlayAgain.classList.remove("result-pending");
     dom.game.btnPlayAgain.classList.add("ready-waiting");
-    dom.game.btnPlayAgain.disabled = true;
 
     const mySeq = ++state._roomFetchSeq;
 
     try {
-      const result = await apiRequest("/api/rooms/ready", {
+      const result = await apiRequestRetry("/api/rooms/ready", {
         method: "POST",
         body: JSON.stringify({
           roomId: state.session.roomId,
