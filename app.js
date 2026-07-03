@@ -1276,10 +1276,19 @@
       const msg = String(err.message || "");
       const isDefinitelyGone = msg.includes("Room not found") || msg.includes("404");
       if (isDefinitelyGone) {
-        // The room genuinely no longer exists server-side — no point retrying.
+        // The room genuinely no longer exists server-side (most likely the
+        // free-tier server process restarted and wiped in-memory rooms).
         stopPolling();
-        showToast("Xona topilmadi — server qayta ishga tushgan bo'lishi mumkin.");
-        routeToHome();
+        if (state.mode === "quick") {
+          showToast("Server qayta ishga tushdi. Yangi raqib qidirilmoqda…");
+          state.mode = "home"; // clear the "already in matchmaking" guard
+          state.session = null;
+          state.room = null;
+          joinQuickMatch();
+        } else {
+          showToast("Xona topilmadi — server qayta ishga tushgan bo'lishi mumkin.");
+          routeToHome();
+        }
         return;
       }
       // Transient failure (timeout, dropped connection, server briefly
@@ -1557,9 +1566,23 @@
     } catch (err) {
       state._optimisticReady = false;
       state._optimisticReadyRoundKey = "";
-      showToast(String(err.message || "Could not start next round"));
+      const msg = String(err.message || "Could not start next round");
+      if (msg.includes("Room not found") || err.status === 404) {
+        stopPolling();
+        if (state.mode === "quick") {
+          showToast("Server qayta ishga tushdi. Yangi raqib qidirilmoqda…");
+          state.mode = "home";
+          state.session = null;
+          state.room = null;
+          joinQuickMatch();
+        } else {
+          showToast("Xona topilmadi — server qayta ishga tushgan bo'lishi mumkin.");
+          routeToHome();
+        }
+        return;
+      }
+      showToast(msg);
       // Re-enable button so user can try again
-      dom.game.btnPlayAgain.disabled = false;
       dom.game.btnPlayAgain.classList.remove("ready-waiting", "result-pending");
       dom.game.btnPlayAgain.textContent = "Next round";
     } finally {
