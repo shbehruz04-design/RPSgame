@@ -1215,6 +1215,16 @@ code {
   box-shadow: none;
 }
 
+/* Next Round — opponent's client has gone quiet (disconnect timeout) */
+.primary-btn.opponent-gone {
+  background: linear-gradient(135deg, #4a2020, #2a1414);
+  color: var(--danger, #e05a5a);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none !important;
+  opacity: 0.85;
+}
+
 .ghost-btn {
   padding: 12px 20px;
   border-radius: var(--r-md);
